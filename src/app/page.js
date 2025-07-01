@@ -2,23 +2,29 @@
 import { useState, useEffect } from "react";
 import WordleBoard from "../components/WordleBoard";
 
-// Helper for feedback: returns ['g','b','y',...] for green/yellow/blank
+// Helper for feedback
 function getFeedback(guess, answer) {
-  const res = Array(5).fill("b");
-  const ansArr = answer.split("");
-  guess.split("").forEach((c, i) => {
+  const res = Array(5).fill('b');
+  const ansArr = answer.split('');
+  guess.split('').forEach((c, i) => {
     if (c === ansArr[i]) {
-      res[i] = "g";
+      res[i] = 'g';
       ansArr[i] = null;
     }
   });
-  guess.split("").forEach((c, i) => {
-    if (res[i] === "b" && ansArr.includes(c)) {
-      res[i] = "y";
+  guess.split('').forEach((c, i) => {
+    if (res[i] === 'b' && ansArr.includes(c)) {
+      res[i] = 'y';
       ansArr[ansArr.indexOf(c)] = null;
     }
   });
   return res;
+}
+
+function filterPossibleWords(possibleWords, guess, feedback) {
+  return possibleWords.filter(word =>
+    JSON.stringify(getFeedback(guess, word)) === JSON.stringify(feedback)
+  );
 }
 
 // Keyboard layout rows
@@ -28,17 +34,15 @@ const KEYBOARD_ROWS = [
   "ZXCVBNM".split(""),
 ];
 
-// Used-letter coloring for keyboard
 function getKeyboardState(guesses, feedbacks) {
-  const state = {}; // letter: 'g' | 'y' | 'b'
+  const state = {};
   guesses.forEach((guess, i) => {
-    guess.split("").forEach((char, j) => {
+    guess.split('').forEach((char, j) => {
       const code = feedbacks[i][j];
-      // Prioritize green > yellow > gray
       if (
-        code === "g" ||
-        (code === "y" && state[char] !== "g") ||
-        (code === "b" && !state[char])
+        code === 'g' ||
+        (code === 'y' && state[char] !== 'g') ||
+        (code === 'b' && !state[char])
       ) {
         state[char] = code;
       }
@@ -54,7 +58,7 @@ function Keyboard({ guesses, feedbacks }) {
     y: "bg-yellow-400 border-yellow-500 text-white",
     b: "bg-gray-300 border-gray-400 text-gray-600",
     "": "bg-white border-gray-300 text-gray-600",
-    undefined: "bg-white border-gray-300 text-gray-600",
+    undefined: "bg-white border-gray-300 text-gray-600"
   };
   return (
     <div className="flex flex-col items-center space-y-1">
@@ -63,9 +67,7 @@ function Keyboard({ guesses, feedbacks }) {
           {row.map((key) => (
             <span
               key={key}
-              className={`w-8 h-10 rounded font-bold text-lg flex items-center justify-center border ${
-                colorClass[state[key]]
-              }`}
+              className={`w-8 h-10 rounded font-bold text-lg flex items-center justify-center border ${colorClass[state[key]]}`}
             >
               {key}
             </span>
@@ -85,10 +87,14 @@ export default function Home() {
   const [llmGuesses, setLlmGuesses] = useState([]);
   const [llmFeedback, setLlmFeedback] = useState([]);
   const [llmReasons, setLlmReasons] = useState([]);
+  const [botGuesses, setBotGuesses] = useState([]);
+  const [botFeedback, setBotFeedback] = useState([]);
+  const [botPossibleAnswers, setBotPossibleAnswers] = useState([]);
+  const [botReasons, setBotReasons] = useState([]);
   const [yourInput, setYourInput] = useState("");
-  const [status, setStatus] = useState(""); // "You win!" | "LLM wins!" | ""
+  const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
-  const [invalidWord, setInvalidWord] = useState(""); // for error message
+  const [invalidWord, setInvalidWord] = useState("");
 
   // Load allowed and answer word lists on mount
   useEffect(() => {
@@ -96,36 +102,38 @@ export default function Home() {
       .then((res) => res.text())
       .then((txt) => {
         setAllowedWords(
-          txt
-            .split("\n")
-            .map((w) => w.trim().toUpperCase())
-            .filter(Boolean)
+          txt.split("\n").map((w) => w.trim().toUpperCase()).filter(Boolean)
         );
       });
     fetch("/data/answers.txt")
       .then((res) => res.text())
       .then((txt) => {
-        const arr = txt
-          .split("\n")
-          .map((w) => w.trim().toUpperCase())
-          .filter(Boolean);
+        const arr = txt.split("\n").map((w) => w.trim().toUpperCase()).filter(Boolean);
         setAnswers(arr);
         setAnswer(arr[Math.floor(Math.random() * arr.length)]);
+        setBotPossibleAnswers([...arr]);
+        setBotGuesses([]);
+        setBotFeedback([]);
+        setBotReasons([]);
       });
   }, []);
 
-  // New game resets everything and picks a new answer
+  // Reset everything on new game
   const newGame = () => {
     setYourGuesses([]);
     setYourFeedback([]);
     setLlmGuesses([]);
     setLlmFeedback([]);
     setLlmReasons([]);
+    setBotGuesses([]);
+    setBotFeedback([]);
+    setBotReasons([]);
     setYourInput("");
     setStatus("");
     setInvalidWord("");
     if (answers.length) {
       setAnswer(answers[Math.floor(Math.random() * answers.length)]);
+      setBotPossibleAnswers([...answers]);
     }
   };
 
@@ -147,7 +155,7 @@ export default function Home() {
     if (guess === answer) {
       setStatus("You win!");
     }
-    // LLM turn (always let it play even if you just won)
+    // --- LLM's turn ---
     setLoading(true);
     const res = await fetch("/api/llm-guess", {
       method: "POST",
@@ -169,29 +177,43 @@ export default function Home() {
     setLlmFeedback((f) => [...f, llmFb]);
     setLlmReasons((r) => [...r, llmReason]);
     if (llmGuess === answer && !status) setStatus("LLM wins!");
-  }
 
-  // After the game ends, LLM's feedback is revealed.
-  const revealLlmFeedback = status !== "";
-  
+    // --- Bot's turn ---
+    let botGuess = "SLATE";
+    let botReason = "Great starting word, covers common letters.";
+    let newBotPossibleAnswers = [...botPossibleAnswers];
+    if (botGuesses.length > 0) {
+      // Filter the pool using previous guess and feedback
+      newBotPossibleAnswers = filterPossibleWords(
+        botPossibleAnswers,
+        botGuesses[botGuesses.length - 1],
+        botFeedback[botFeedback.length - 1]
+      );
+      if (newBotPossibleAnswers.length > 0) {
+        botGuess = newBotPossibleAnswers[0];
+        botReason =
+          botGuesses.length === 5
+            ? "Last guess!"
+            : "First valid possible answer after filtering.";
+      }
+    }
+    const botFb = getFeedback(botGuess, answer);
+    setBotPossibleAnswers(
+      filterPossibleWords(newBotPossibleAnswers, botGuess, botFb)
+    );
+    setBotGuesses((g) => [...g, botGuess]);
+    setBotFeedback((f) => [...f, botFb]);
+    setBotReasons((r) => [...r, botReason]);
+    if (botGuess === answer && !status) setStatus("Bot wins!");
+  }
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-gray-50">
-      <h1 className="text-2xl font-bold mb-4 text-gray-600">
-        Wordle: You vs LLM
-      </h1>
+      <h1 className="text-2xl font-bold mb-4 text-gray-600">Wordle: You vs LLM vs Bot</h1>
       <div className="flex gap-8">
-        <WordleBoard
-          guesses={yourGuesses}
-          feedback={yourFeedback}
-          title="You"
-        />
-        <WordleBoard
-          guesses={llmGuesses}
-          feedback={llmFeedback}
-          title="LLM"
-          reasonList={llmReasons}
-        />
+        <WordleBoard guesses={yourGuesses} feedback={yourFeedback} title="You" />
+        <WordleBoard guesses={llmGuesses} feedback={llmFeedback} title="LLM" reasonList={llmReasons} />
+        <WordleBoard guesses={botGuesses} feedback={botFeedback} title="Bot" reasonList={botReasons} />
       </div>
       <form onSubmit={handleSubmit} className="mt-8 flex gap-2">
         <input
@@ -213,9 +235,7 @@ export default function Home() {
         </button>
       </form>
       {invalidWord && (
-        <div className="mt-2 text-sm text-red-500 text-gray-600">
-          {invalidWord}
-        </div>
+        <div className="mt-2 text-sm text-red-500 text-gray-600">{invalidWord}</div>
       )}
       <div className="mt-8">
         <Keyboard guesses={yourGuesses} feedbacks={yourFeedback} />
@@ -227,9 +247,7 @@ export default function Home() {
       >
         New Game
       </button>
-      {status && (
-        <div className="mt-4 font-bold text-xl text-gray-600">{status}</div>
-      )}
+      {status && <div className="mt-4 font-bold text-xl text-gray-600">{status}</div>}
     </main>
   );
 }

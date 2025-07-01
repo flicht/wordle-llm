@@ -21,7 +21,7 @@ export default function WordleBoard({ guesses, feedback, title, reasonList, mask
                   key={j}
                   className={`w-8 h-8 rounded text-center font-mono font-bold text-xl border ${tileClass} text-gray-600 flex items-center justify-center`}
                 >
-                  {char || ""}
+                  {title === 'You' ? char : ""}
                 </div>
               );
             })}
