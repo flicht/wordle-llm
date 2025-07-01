@@ -211,9 +211,9 @@ export default function Home() {
     <main className="flex min-h-screen flex-col items-center justify-center bg-gray-50">
       <h1 className="text-2xl font-bold mb-4 text-gray-600">Wordle: You vs LLM vs Bot</h1>
       <div className="flex gap-8">
-        <WordleBoard guesses={yourGuesses} feedback={yourFeedback} title="You" />
-        <WordleBoard guesses={llmGuesses} feedback={llmFeedback} title="LLM" reasonList={llmReasons} />
-        <WordleBoard guesses={botGuesses} feedback={botFeedback} title="Bot" reasonList={botReasons} />
+        <WordleBoard guesses={yourGuesses} feedback={yourFeedback} title="You" status={status} />
+        <WordleBoard guesses={llmGuesses} feedback={llmFeedback} title="LLM" reasonList={llmReasons} status={status}/>
+        <WordleBoard guesses={botGuesses} feedback={botFeedback} title="Bot" reasonList={botReasons} status={status}/>
       </div>
       <form onSubmit={handleSubmit} className="mt-8 flex gap-2">
         <input
